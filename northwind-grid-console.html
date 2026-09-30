@@ -1,0 +1,1146 @@
+<title>Northwind Grid Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: control-room tiling. Hairline-separated panes: alarms | live topology over a 24h dispatch chart | inspector. */
+:root{
+  color-scheme: dark;
+  --bg:#0b1114; --panel:#10181c; --panel-2:#152026; --rule:#1f2c33; --rule-2:#2a3a43;
+  --fg:#dbe5e8; --fg-2:#9fb1b8; --fg-3:#6b8089;
+  --accent:#6fd3f0; --accent-ink:#06222b; --accent-soft:rgba(111,211,240,.14);
+  --wire:#3c5561; --grid:#1a262c;
+  --ok:#4fbf8a; --warn:#e8b83f; --crit:#f0584c; --info:#8ea4ad;
+  --warn-soft:rgba(232,184,63,.14); --crit-soft:rgba(240,88,76,.16); --ok-soft:rgba(79,191,138,.14);
+  --f-nuc:#9a88ec; --f-hyd:#4a8fe0; --f-wnd:#3fbfa3; --f-sol:#f0b24a; --f-gas:#cf7a93;
+  --shadow:0 18px 50px rgba(0,0,0,.45);
+  --font-display:"Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body:"Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --bg:#e9eef0; --panel:#f8fafb; --panel-2:#eef3f5; --rule:#d5dee2; --rule-2:#c3cfd4;
+    --fg:#0f1d23; --fg-2:#43565e; --fg-3:#6f828a;
+    --accent:#0a7ea6; --accent-ink:#ffffff; --accent-soft:rgba(10,126,166,.12);
+    --wire:#9fb2ba; --grid:#dfe7ea;
+    --ok:#1f8a58; --warn:#b7830f; --crit:#cf3326; --info:#5d737c;
+    --warn-soft:rgba(183,131,15,.13); --crit-soft:rgba(207,51,38,.11); --ok-soft:rgba(31,138,88,.12);
+    --f-nuc:#6d5ad0; --f-hyd:#2f6fc0; --f-wnd:#16927a; --f-sol:#d18d12; --f-gas:#b0506d;
+    --shadow:0 18px 50px rgba(20,40,50,.18);
+  }
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg:#e9eef0; --panel:#f8fafb; --panel-2:#eef3f5; --rule:#d5dee2; --rule-2:#c3cfd4;
+  --fg:#0f1d23; --fg-2:#43565e; --fg-3:#6f828a;
+  --accent:#0a7ea6; --accent-ink:#ffffff; --accent-soft:rgba(10,126,166,.12);
+  --wire:#9fb2ba; --grid:#dfe7ea;
+  --ok:#1f8a58; --warn:#b7830f; --crit:#cf3326; --info:#5d737c;
+  --warn-soft:rgba(183,131,15,.13); --crit-soft:rgba(207,51,38,.11); --ok-soft:rgba(31,138,88,.12);
+  --f-nuc:#6d5ad0; --f-hyd:#2f6fc0; --f-wnd:#16927a; --f-sol:#d18d12; --f-gas:#b0506d;
+  --shadow:0 18px 50px rgba(20,40,50,.18);
+}
+
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:13px;line-height:1.4;overflow:hidden;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-family:var(--font-display);font-stretch:112%;font-weight:600;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3)}
+
+.app{height:100%;display:grid;gap:1px;background:var(--rule);
+  grid-template-columns:292px minmax(0,1fr) 340px;
+  grid-template-rows:auto minmax(0,1fr) 268px;
+  grid-template-areas:"top top top" "alarms map insp" "alarms chart insp"}
+.pane{background:var(--panel);min-width:0;min-height:0;position:relative}
+
+/* ---------- Top bar ---------- */
+.top{grid-area:top;display:flex;align-items:stretch;flex-wrap:wrap;gap:1px;background:var(--rule)}
+.top > *{background:var(--panel)}
+.brand{display:flex;align-items:center;gap:12px;padding:10px 16px;min-width:0}
+.brand svg{flex:none}
+.brand-name{font-family:var(--font-display);font-stretch:125%;font-weight:750;font-size:15px;letter-spacing:.02em;line-height:1}
+.brand-sub{font-size:11px;color:var(--fg-3);margin-top:3px;white-space:nowrap}
+.stats{display:flex;flex:1;gap:1px;background:var(--rule);min-width:0;flex-wrap:wrap}
+.stat{background:var(--panel);padding:9px 16px;display:flex;flex-direction:column;justify-content:center;gap:2px;flex:1 1 120px;min-width:0}
+.stat .v{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:17px;font-weight:500;letter-spacing:-.01em;white-space:nowrap}
+.stat .v small{font-size:11px;color:var(--fg-3);font-weight:400;margin-left:3px}
+.stat.freq{flex:1.6 1 210px;flex-direction:row;align-items:center;gap:12px}
+.stat.freq canvas{width:92px;height:30px;flex:none}
+.delta{font-family:var(--font-mono);font-size:10.5px;color:var(--fg-3)}
+.delta.bad{color:var(--crit)} .delta.warnc{color:var(--warn)} .delta.good{color:var(--ok)}
+.controls{display:flex;align-items:center;gap:8px;padding:8px 12px;flex-wrap:wrap}
+.clock{font-family:var(--font-mono);font-size:20px;font-weight:500;letter-spacing:.02em;padding:0 4px;font-variant-numeric:tabular-nums}
+.clock small{font-size:10px;color:var(--fg-3);display:block;letter-spacing:.1em;font-family:var(--font-display);font-stretch:112%;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:6px;border:1px solid var(--rule-2);background:var(--panel-2);font-size:12px;font-weight:500;white-space:nowrap;transition:background .15s,border-color .15s}
+.btn:hover{border-color:var(--fg-3)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{border-color:color-mix(in srgb,var(--crit) 55%,transparent);color:var(--crit);background:var(--crit-soft)}
+.btn.danger:hover{border-color:var(--crit)}
+.btn.icon{width:30px;padding:0;justify-content:center}
+.kbd{font-family:var(--font-mono);font-size:10px;padding:1px 5px;border-radius:4px;border:1px solid var(--rule-2);color:var(--fg-3);background:var(--panel)}
+.seg{display:inline-flex;border:1px solid var(--rule-2);border-radius:6px;overflow:hidden;height:30px}
+.seg button{border:0;background:transparent;padding:0 9px;font-family:var(--font-mono);font-size:11px;color:var(--fg-2)}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+.seg button + button{border-left:1px solid var(--rule-2)}
+
+/* ---------- Alarms ---------- */
+.alarms{grid-area:alarms;display:flex;flex-direction:column}
+.pane-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px 10px;border-bottom:1px solid var(--rule)}
+.pane-title{font-family:var(--font-display);font-stretch:118%;font-weight:700;font-size:13px;letter-spacing:.02em}
+.counts{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:600;font-family:var(--font-mono);border:1px solid transparent;white-space:nowrap}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.chip.crit{color:var(--crit);background:var(--crit-soft)}
+.chip.warn{color:var(--warn);background:var(--warn-soft)}
+.chip.ok{color:var(--ok);background:var(--ok-soft)}
+.chip.info{color:var(--info);border-color:var(--rule-2)}
+.chip.accent{color:var(--accent);background:var(--accent-soft)}
+.alarm-list{list-style:none;margin:0;padding:6px;overflow:auto;flex:1;display:flex;flex-direction:column;gap:4px}
+.alarm{display:grid;grid-template-columns:3px minmax(0,1fr) auto;gap:10px;align-items:start;padding:9px 10px 9px 0;border-radius:6px;background:var(--panel-2);border:1px solid transparent;cursor:pointer;transition:border-color .15s,opacity .3s}
+.alarm:hover{border-color:var(--rule-2)}
+.alarm .stripe{align-self:stretch;border-radius:0 3px 3px 0;background:var(--info)}
+.alarm.crit .stripe{background:var(--crit)} .alarm.warn .stripe{background:var(--warn)}
+.alarm.crit:not(.acked):not(.cleared) .stripe{animation:blink 1.1s steps(2,start) infinite}
+@keyframes blink{50%{opacity:.25}}
+.alarm .t{font-weight:600;font-size:12.5px;line-height:1.3}
+.alarm .m{font-family:var(--font-mono);font-size:10.5px;color:var(--fg-3);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+.alarm.acked{background:transparent;border-color:var(--rule)}
+.alarm.acked .t{color:var(--fg-2);font-weight:500}
+.alarm.cleared{opacity:.5}
+.alarm.cleared .t{text-decoration:line-through;text-decoration-color:var(--fg-3)}
+.ack{height:22px;padding:0 8px;font-size:10.5px;border-radius:5px;border:1px solid var(--rule-2);background:var(--panel);font-family:var(--font-mono);color:var(--fg-2)}
+.ack:hover{color:var(--fg);border-color:var(--fg-3)}
+.alarm-empty{padding:28px 16px;text-align:center;color:var(--fg-3);font-size:12px}
+.alarm-foot{border-top:1px solid var(--rule);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--fg-3)}
+
+/* ---------- Map ---------- */
+.map{grid-area:map;overflow:hidden}
+.map canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+.map-bar{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;pointer-events:none;flex-wrap:wrap}
+.map-bar > *{pointer-events:auto}
+.map-title{background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(6px);border:1px solid var(--rule);border-radius:8px;padding:8px 12px}
+.map-title b{font-family:var(--font-display);font-stretch:118%;font-weight:700;font-size:13px}
+.map-title div{font-size:11px;color:var(--fg-3);margin-top:1px}
+.layer-group{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.toggle{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--rule-2);background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(6px);font-size:11.5px;color:var(--fg-2)}
+.toggle::before{content:"";width:8px;height:8px;border-radius:2px;border:1.5px solid var(--fg-3)}
+.toggle[aria-pressed="true"]{color:var(--fg)}
+.toggle[aria-pressed="true"]::before{background:var(--accent);border-color:var(--accent)}
+.legend{position:absolute;left:12px;bottom:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(6px);border:1px solid var(--rule);border-radius:8px;padding:8px 12px;font-size:10.5px;color:var(--fg-2);max-width:calc(100% - 24px)}
+.legend .ramp{display:flex;align-items:center;gap:6px}
+.legend .bar{width:90px;height:5px;border-radius:3px;background:linear-gradient(90deg,var(--wire) 0 60%,var(--warn) 78%,var(--crit) 100%)}
+.legend .sym{display:inline-flex;align-items:center;gap:5px}
+.legend svg{display:block}
+.hint{position:absolute;right:12px;bottom:12px;font-size:11px;color:var(--fg-3);background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--rule);border-radius:8px;padding:7px 10px;max-width:260px}
+.tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--rule-2);border-radius:8px;padding:8px 10px;box-shadow:var(--shadow);font-size:11.5px;min-width:160px;z-index:5;transform:translate(14px,14px)}
+.tip b{display:block;font-size:12px;margin-bottom:4px}
+.tip .r{display:flex;justify-content:space-between;gap:14px;font-family:var(--font-mono);font-size:10.5px;color:var(--fg-2)}
+
+/* ---------- Chart ---------- */
+.chart{grid-area:chart;display:flex;flex-direction:column}
+.chart-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px 0;flex-wrap:wrap}
+.chart-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--fg-2)}
+.chart-legend span{display:inline-flex;align-items:center;gap:5px}
+.chart-legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.chart-legend i.line{height:2px;width:14px;border-radius:0}
+.chart-legend i.dash{height:0;width:14px;border-top:2px dashed var(--fg-2);background:none!important}
+.chart-body{flex:1;min-height:0;position:relative}
+.chart-body svg{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:ew-resize}
+.chart-body text{font-family:var(--font-mono);font-size:10px;fill:var(--fg-3)}
+
+/* ---------- Inspector ---------- */
+.insp{grid-area:insp;overflow:auto}
+.insp-in{padding:16px;display:flex;flex-direction:column;gap:16px}
+.insp h2{font-family:var(--font-display);font-stretch:120%;font-weight:720;font-size:22px;line-height:1.1;margin:4px 0 8px;letter-spacing:-.005em;text-wrap:balance}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.tile{background:var(--panel-2);padding:10px 12px}
+.tile .v{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:21px;font-weight:500;margin-top:3px;white-space:nowrap}
+.tile .v small{font-size:11px;color:var(--fg-3);margin-left:3px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:7px 12px;margin:0;font-size:12px}
+.kv dt{color:var(--fg-3)}
+.kv dd{margin:0;text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.sect{display:flex;flex-direction:column;gap:8px}
+.sect-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.meter{position:relative;height:8px;border-radius:4px;background:var(--panel-2);border:1px solid var(--rule);overflow:visible}
+.meter > span{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--accent);transition:width .25s,background .25s}
+.meter .mark{position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--fg-3)}
+.conn{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.conn li{background:var(--panel-2)}
+.conn button{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:4px 10px;align-items:center;padding:8px 10px;width:100%}
+.conn button:hover{background:var(--accent-soft)}
+.conn button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.conn .id{font-family:var(--font-mono);font-size:10.5px;color:var(--fg-3)}
+.conn .nm{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conn .fl{font-family:var(--font-mono);font-size:11px;text-align:right;white-space:nowrap}
+.conn .meter{grid-column:2 / 4;height:4px;border:0}
+.range-row{display:flex;align-items:center;gap:10px}
+input[type=range]{flex:1;accent-color:var(--accent)}
+.note{font-size:12px;color:var(--fg-2);background:var(--panel-2);border:1px dashed var(--rule-2);border-radius:8px;padding:10px 12px}
+.spark{width:100%;height:74px;display:block}
+.spark text{font-family:var(--font-mono);font-size:9.5px;fill:var(--fg-3)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---------- Overlays ---------- */
+.scrim{position:fixed;inset:0;background:rgba(4,10,12,.55);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px 16px;z-index:20}
+.palette{width:min(620px,100%);background:var(--panel);border:1px solid var(--rule-2);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+.palette input{width:100%;border:0;border-bottom:1px solid var(--rule);background:transparent;padding:16px 18px;font-size:15px;outline:none}
+.palette ul{list-style:none;margin:0;padding:6px;max-height:min(52vh,420px);overflow:auto}
+.palette .grp{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3);padding:10px 12px 4px;font-family:var(--font-display);font-stretch:112%;font-weight:600}
+.palette .it{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px}
+.palette .it[aria-selected="true"]{background:var(--accent-soft)}
+.palette .it .sub{color:var(--fg-3);font-size:11.5px;margin-left:auto;font-family:var(--font-mono);white-space:nowrap}
+.palette .it mark{background:none;color:var(--accent);font-weight:700}
+.palette .foot{display:flex;gap:14px;padding:9px 14px;border-top:1px solid var(--rule);font-size:11px;color:var(--fg-3);flex-wrap:wrap}
+.modal{width:min(820px,100%);background:var(--panel);border:1px solid var(--rule-2);border-radius:12px;box-shadow:var(--shadow);display:flex;flex-direction:column;max-height:78vh}
+.modal-h{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:18px 20px 14px;border-bottom:1px solid var(--rule)}
+.modal-h h3{margin:2px 0 0;font-family:var(--font-display);font-stretch:120%;font-weight:720;font-size:19px}
+.modal-h p{margin:4px 0 0;color:var(--fg-2);font-size:12px;max-width:60ch}
+.progress{height:2px;background:var(--rule)}
+.progress span{display:block;height:100%;background:var(--accent);width:0;transition:width .05s linear}
+.tbl-wrap{overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:12px;min-width:620px}
+th{text-align:left;font-weight:600;color:var(--fg-3);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:10px 14px;border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--panel)}
+td{padding:9px 14px;border-bottom:1px solid var(--rule);vertical-align:middle}
+td.num{font-family:var(--font-mono);font-variant-numeric:tabular-nums;text-align:right}
+td .meter{width:120px;height:5px;display:inline-block;vertical-align:middle;margin-right:8px}
+.toasts{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:30;align-items:center;pointer-events:none;width:max-content;max-width:calc(100% - 32px)}
+.toast{background:var(--fg);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:12.5px;box-shadow:var(--shadow);animation:toastin .25s ease-out}
+@keyframes toastin{from{transform:translateY(8px);opacity:0}}
+
+/* ---------- Responsive ---------- */
+@media (max-width:1180px){
+  body{overflow:auto}
+  .app{height:auto;grid-template-columns:minmax(0,1fr) 320px;grid-template-rows:auto 540px 268px auto;
+    grid-template-areas:"top top" "map insp" "chart insp" "alarms alarms"}
+  .alarm-list{max-height:360px}
+}
+@media (max-width:760px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 440px 260px auto auto;
+    grid-template-areas:"top" "map" "chart" "insp" "alarms"}
+  .brand{flex:1 1 100%}
+  .controls{flex:1 1 100%;justify-content:space-between}
+  .stat.freq canvas{width:64px}
+  .hint{display:none}
+  .legend{gap:10px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
+        <rect x=".5" y=".5" width="29" height="29" rx="7" fill="none" stroke="var(--rule-2)"/>
+        <path d="M7 21 L12 9 L15 17 L18 11 L23 21" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="12" cy="9" r="2" fill="var(--accent)"/><circle cx="18" cy="11" r="2" fill="var(--accent)"/>
+      </svg>
+      <div>
+        <div class="brand-name">NORTHWIND</div>
+        <div class="brand-sub">Balancing Authority · Real-time operations</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat freq" title="System frequency (nominal 60.000 Hz)">
+        <div>
+          <div class="eyebrow">Frequency</div>
+          <div class="v" id="sFreq">60.000<small>Hz</small></div>
+          <div class="delta" id="sFreqD">Δ 0.0 mHz</div>
+        </div>
+        <canvas id="freqSpark" width="92" height="30" aria-hidden="true"></canvas>
+      </div>
+      <div class="stat" title="Area control error">
+        <div class="eyebrow">ACE</div>
+        <div class="v" id="sAce">0<small>MW</small></div>
+        <div class="delta" id="sAceD">L10 ±92 MW</div>
+      </div>
+      <div class="stat">
+        <div class="eyebrow">System load</div>
+        <div class="v" id="sLoad">0<small>MW</small></div>
+        <div class="delta" id="sLoadD">fcst</div>
+      </div>
+      <div class="stat">
+        <div class="eyebrow">Reserve margin</div>
+        <div class="v" id="sRes">0<small>%</small></div>
+        <div class="delta" id="sResD">req. 12%</div>
+      </div>
+      <div class="stat">
+        <div class="eyebrow">Renewables</div>
+        <div class="v" id="sRen">0<small>%</small></div>
+        <div class="delta" id="sRenD">of generation</div>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="clock" id="clock"><small>SIM TIME · PT</small><span id="clockT">18:05</span></div>
+      <button class="btn icon" id="playBtn" aria-label="Pause simulation" title="Play / pause (Space)">
+        <svg width="12" height="12" viewBox="0 0 12 12" id="playIco"><rect x="2" y="1.5" width="3" height="9" fill="currentColor"/><rect x="7" y="1.5" width="3" height="9" fill="currentColor"/></svg>
+      </button>
+      <div class="seg" role="group" aria-label="Playback rate" id="rateSeg">
+        <button aria-pressed="true" data-rate="2">1×</button><button aria-pressed="false" data-rate="10">5×</button><button aria-pressed="false" data-rate="60">30×</button>
+      </div>
+      <button class="btn" id="cmdBtn" title="Command palette">Commands <span class="kbd">⌘K</span></button>
+      <button class="btn icon" id="themeBtn" aria-label="Toggle theme" title="Toggle light / dark">
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M7 1.5 A5.5 5.5 0 0 1 7 12.5 Z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="pane alarms" aria-label="Alarms">
+    <div class="pane-head">
+      <span class="pane-title">Alarms</span>
+      <div class="seg" role="group" aria-label="Alarm filter" id="alarmFilter">
+        <button aria-pressed="true" data-f="all">All</button><button aria-pressed="false" data-f="open">Unacked</button>
+      </div>
+    </div>
+    <div class="counts" id="alarmCounts"></div>
+    <ul class="alarm-list" id="alarmList"></ul>
+    <div class="alarm-foot"><span id="alarmFoot">Thermal threshold 90% · emergency 100%</span><button class="btn" id="ackAll">Ack all</button></div>
+  </section>
+
+  <section class="pane map" id="mapPane" aria-label="Transmission topology">
+    <canvas id="map"></canvas>
+    <div class="map-bar">
+      <div class="map-title"><b>Transmission topology</b><div>14 buses · 21 branches · DC power flow, solved every tick</div></div>
+      <div class="layer-group" id="layers">
+        <button class="toggle" aria-pressed="true" data-layer="particles">Flow</button>
+        <button class="toggle" aria-pressed="true" data-layer="heat">Loading</button>
+        <button class="toggle" aria-pressed="true" data-layer="labels">Labels</button>
+        <button class="btn primary" id="n1Btn" style="height:28px">Run N-1 scan</button>
+      </div>
+    </div>
+    <div class="legend">
+      <span class="ramp">Loading <span class="bar"></span> <span class="mono">100%</span></span>
+      <span class="sym"><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="none" stroke="var(--fg-2)" stroke-width="1.5"/></svg>Generator</span>
+      <span class="sym"><svg width="12" height="12"><rect x="2.5" y="2.5" width="7" height="7" transform="rotate(45 6 6)" fill="var(--fg-2)"/></svg>Load</span>
+      <span class="sym"><svg width="12" height="12"><rect x="2" y="2" width="8" height="8" fill="none" stroke="var(--fg-2)" stroke-width="1.5"/></svg>Substation</span>
+      <span class="sym"><svg width="18" height="12"><line x1="1" y1="6" x2="17" y2="6" stroke="var(--fg-3)" stroke-width="2" stroke-dasharray="3 3"/></svg>Open</span>
+    </div>
+    <div class="hint" id="hint">Click a line, then <b>Open breaker</b> to watch power reroute. Press <span class="kbd">⌘K</span> for everything else.</div>
+    <div class="tip" id="tip" hidden></div>
+  </section>
+
+  <section class="pane chart" aria-label="24-hour dispatch">
+    <div class="chart-head">
+      <div><span class="pane-title">Dispatch · next 24 h</span> <span class="eyebrow" style="margin-left:6px">drag to scrub</span></div>
+      <div class="chart-legend">
+        <span><i style="background:var(--f-nuc)"></i>Nuclear</span>
+        <span><i style="background:var(--f-hyd)"></i>Hydro</span>
+        <span><i style="background:var(--f-wnd)"></i>Wind</span>
+        <span><i style="background:var(--f-sol)"></i>Solar</span>
+        <span><i style="background:var(--f-gas)"></i>Gas</span>
+        <span><i class="line" style="background:var(--fg)"></i>Actual load</span>
+        <span><i class="dash"></i>Forecast</span>
+      </div>
+    </div>
+    <div class="chart-body" id="chartBody"><svg id="chart" role="img" aria-label="Stacked generation by fuel and load forecast over 24 hours"></svg></div>
+  </section>
+
+  <aside class="pane insp" id="insp" aria-label="Inspector"><div class="insp-in" id="inspIn"></div></aside>
+</div>
+
+<div class="scrim" id="palScrim" hidden>
+  <div class="palette" role="dialog" aria-label="Command palette">
+    <input id="palInput" placeholder="Search buses, lines and actions…" autocomplete="off" spellcheck="false">
+    <ul id="palList" role="listbox"></ul>
+    <div class="foot"><span><span class="kbd">↑↓</span> move</span><span><span class="kbd">↵</span> run</span><span><span class="kbd">esc</span> close</span><span style="margin-left:auto"><span class="kbd">space</span> play/pause · <span class="kbd">[ ]</span> step 15 min · <span class="kbd">N</span> N-1 scan</span></div>
+  </div>
+</div>
+
+<div class="scrim" id="n1Scrim" hidden>
+  <div class="modal" role="dialog" aria-label="N-1 contingency scan">
+    <div class="modal-h">
+      <div>
+        <div class="eyebrow">Security analysis</div>
+        <h3>N-1 contingency scan</h3>
+        <p id="n1Sub">Opens each in-service branch in turn, re-solves the network, and ranks the worst post-contingency thermal loading.</p>
+      </div>
+      <button class="btn icon" id="n1Close" aria-label="Close">✕</button>
+    </div>
+    <div class="progress"><span id="n1Prog"></span></div>
+    <div class="tbl-wrap" id="n1Wrap"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+
+/* ================= Network model ================= */
+const BUSES = [
+  {id:0, name:'Brandt Energy Center', short:'Brandt', type:'gas', x:.17,y:.60,kV:345,cap:2700},
+  {id:1, name:'Harrow Hydro', short:'Harrow', type:'hydro', x:.12,y:.20,kV:345,cap:700},
+  {id:2, name:'Colfax Wind', short:'Colfax', type:'wind', x:.40,y:.10,kV:230,cap:700},
+  {id:3, name:'Mesa Flats Solar', short:'Mesa Flats', type:'solar', x:.70,y:.84,kV:230,cap:550},
+  {id:4, name:'Ketter Point Nuclear', short:'Ketter Pt', type:'nuclear', x:.90,y:.30,kV:345,cap:1100},
+  {id:5, name:'Portage City', short:'Portage', type:'load', x:.53,y:.48,kV:345,peak:1250},
+  {id:6, name:'Aldermoor', short:'Aldermoor', type:'load', x:.30,y:.36,kV:345,peak:520},
+  {id:7, name:'Lynde Junction', short:'Lynde', type:'sub', x:.38,y:.68,kV:345,peak:120},
+  {id:8, name:'Greyhaven Port', short:'Greyhaven', type:'load', x:.68,y:.26,kV:345,peak:640},
+  {id:9, name:'Sable Creek', short:'Sable Ck', type:'load', x:.80,y:.58,kV:345,peak:380},
+  {id:10,name:'Orrin Valley', short:'Orrin', type:'load', x:.22,y:.88,kV:230,peak:300},
+  {id:11,name:'Tamsin Ridge', short:'Tamsin', type:'sub', x:.55,y:.20,kV:345,peak:90},
+  {id:12,name:'Wexford Data Campus', short:'Wexford', type:'load', x:.52,y:.76,kV:230,peak:420,flat:true},
+  {id:13,name:'Callow Bay', short:'Callow', type:'load', x:.93,y:.82,kV:230,peak:350},
+];
+const LINES = [
+  [1,6,.06,800,345],[1,2,.08,400,230],[2,11,.05,700,345],[11,8,.05,600,345],[6,5,.04,900,345],
+  [0,6,.04,1100,345],[0,7,.04,950,345],[0,10,.08,500,230],[7,12,.04,600,230],[7,5,.05,700,345],
+  [12,3,.06,450,230],[3,13,.06,400,230],[13,9,.05,400,230],[9,4,.04,900,345],[4,8,.04,900,345],
+  [8,5,.04,800,345],[9,5,.05,700,345],[11,5,.06,500,230],[10,7,.07,400,230],[6,11,.07,400,230],[12,5,.05,500,230]
+].map((l,i) => ({id:'L'+(i+1), a:l[0], b:l[1], x:l[2], rating:l[3], kV:l[4], open:false, phase:0}));
+const LINE = Object.fromEntries(LINES.map(l => [l.id, l]));
+const FUEL = {gas:'Gas', hydro:'Hydro', wind:'Wind', solar:'Solar', nuclear:'Nuclear'};
+const FUELVAR = {nuclear:'f-nuc', hydro:'f-hyd', wind:'f-wnd', solar:'f-sol', gas:'f-gas'};
+const isGen = b => !!FUEL[b.type];
+const lineName = l => BUSES[l.a].short + ' – ' + BUSES[l.b].short;
+
+const LOADP = [.62,.59,.58,.58,.59,.63,.70,.78,.82,.83,.84,.85,.85,.85,.86,.88,.92,.97,1,.99,.94,.86,.76,.67,.62];
+const wrapH = h => ((h % 24) + 24) % 24;
+function interp(a, h){ h = wrapH(h); const i = Math.floor(h), f = h - i; return a[i] + (a[i+1] - a[i]) * f; }
+const loadF = h => interp(LOADP, h);
+function solarF(h){ h = wrapH(h); return (h < 6.2 || h > 19.6) ? 0 : Math.pow(Math.sin(Math.PI * (h - 6.2) / 13.4), 1.4); }
+const windF = h => Math.max(.05, Math.min(.95, .46 + .22 * Math.sin(h / 24 * 2 * Math.PI + 1.3) + .08 * Math.sin(h * .9)));
+const actualNoise = h => 1 + .014 * Math.sin(h * 3.1) + .009 * Math.sin(h * 7.3 + 1);
+
+function injections(h, over){
+  const lf = loadF(h), gen = [], load = [], avail = [];
+  let tl = 0, tg = 0;
+  for (const b of BUSES){
+    let g = 0, l = 0, av = 0;
+    if (b.peak) l = (b.flat ? b.peak * .92 : b.peak * lf) * (b.flat ? 1 : actualNoise(h));
+    const lim = (over[b.id] ?? 100) / 100;
+    if (b.type === 'hydro'){ av = b.cap * .95 * lim; g = b.cap * Math.min(.95, .35 + .55 * lf) * lim; }
+    if (b.type === 'wind'){ av = b.cap * windF(h) * lim; g = av; }
+    if (b.type === 'solar'){ av = b.cap * solarF(h) * .94 * lim; g = av; }
+    if (b.type === 'nuclear'){ av = b.cap * .97 * lim; g = av; }
+    if (b.type === 'gas') av = b.cap;
+    gen[b.id] = g; load[b.id] = l; avail[b.id] = av; tl += l; tg += g;
+  }
+  gen[0] = Math.max(0, tl - tg);
+  return {gen, load, avail, tl};
+}
+function unreachable(lines){
+  const adj = BUSES.map(() => []);
+  for (const l of lines) if (!l.open){ adj[l.a].push(l.b); adj[l.b].push(l.a); }
+  const seen = new Set([0]), st = [0];
+  while (st.length){ const n = st.pop(); for (const m of adj[n]) if (!seen.has(m)){ seen.add(m); st.push(m); } }
+  return BUSES.filter(b => !seen.has(b.id)).map(b => b.id);
+}
+/* DC power flow: B'θ = P with bus 0 (Brandt) as slack. Gaussian elimination, partial pivoting. */
+function solve(h, lines, over){
+  const inj = injections(h, over), n = BUSES.length, m = n - 1;
+  const B = Array.from({length:n}, () => new Float64Array(n));
+  for (const l of lines){ if (l.open) continue; const y = 1 / l.x;
+    B[l.a][l.a] += y; B[l.b][l.b] += y; B[l.a][l.b] -= y; B[l.b][l.a] -= y; }
+  const A = [], r = [];
+  for (let i = 1; i < n; i++){ A.push(Array.from(B[i]).slice(1)); r.push((inj.gen[i] - inj.load[i]) / 100); }
+  for (let c = 0; c < m; c++){
+    let p = c; for (let k = c + 1; k < m; k++) if (Math.abs(A[k][c]) > Math.abs(A[p][c])) p = k;
+    [A[c], A[p]] = [A[p], A[c]]; [r[c], r[p]] = [r[p], r[c]];
+    for (let k = c + 1; k < m; k++){ const f = A[k][c] / A[c][c]; if (!f) continue;
+      for (let j = c; j < m; j++) A[k][j] -= f * A[c][j]; r[k] -= f * r[c]; }
+  }
+  const th = new Array(m);
+  for (let k = m - 1; k >= 0; k--){ let s = r[k]; for (let j = k + 1; j < m; j++) s -= A[k][j] * th[j]; th[k] = s / A[k][k]; }
+  const theta = [0, ...th], flows = {};
+  for (const l of lines) flows[l.id] = l.open ? 0 : (theta[l.a] - theta[l.b]) / l.x * 100;
+  return {...inj, theta, flows};
+}
+const loading = (sol, l) => Math.abs(sol.flows[l.id]) / l.rating;
+
+/* ================= State ================= */
+const S = {
+  h: 18 + 5/60, playing: !RM.matches, rate: 2, over: {},
+  sel: {kind:'bus', id:5}, hover: null,
+  layers: {particles:true, heat:true, labels:true},
+  alarms: [], filter: 'all', dev: 0, freqHist: [], sol: null, t0: 0,
+};
+let C = {};
+function readColors(){
+  const cs = getComputedStyle(document.documentElement);
+  for (const k of ['bg','panel','panel-2','rule','rule-2','fg','fg-2','fg-3','accent','wire','grid','ok','warn','crit','f-nuc','f-hyd','f-wnd','f-sol','f-gas'])
+    C[k] = cs.getPropertyValue('--' + k).trim();
+}
+const fmt = (v, d = 0) => v.toLocaleString('en-US', {minimumFractionDigits:d, maximumFractionDigits:d});
+const hhmm = h => { h = wrapH(h); const m = Math.floor(h * 60 + 1e-6); return String(Math.floor(m / 60)).padStart(2,'0') + ':' + String(m % 60).padStart(2,'0'); };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(msg){
+  const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
+  $('#toasts').appendChild(el); setTimeout(() => el.remove(), 3200);
+}
+const uColor = u => u >= 1 ? C.crit : u >= .9 ? C.warn : null;
+const sevOf = u => u >= 1 ? 'crit' : u >= .9 ? 'warn' : 'ok';
+
+/* ================= Alarms ================= */
+let alarmSeq = 0;
+function raise(key, sev, title, ref){
+  let a = S.alarms.find(x => x.key === key && !x.cleared);
+  if (a){
+    if (a.sev !== sev){ if (sev === 'crit') a.acked = false; a.sev = sev; }
+    a.title = title; return a;
+  }
+  a = {n: ++alarmSeq, key, sev, title, ref, at: S.h, acked: false, cleared: false};
+  S.alarms.unshift(a);
+  return a;
+}
+function clearKey(key){
+  for (const a of S.alarms) if (a.key === key && !a.cleared){ a.cleared = true; a.clearedAt = performance.now(); }
+}
+function event(title, ref, sev = 'info'){ raise('ev' + (++alarmSeq), sev, title, ref); }
+function evalAlarms(){
+  for (const l of LINES){
+    const u = loading(S.sol, l), key = 'th-' + l.id;
+    if (!l.open && u >= .9) raise(key, u >= 1 ? 'crit' : 'warn', `${l.id} ${lineName(l)} at ${fmt(u*100)}% of rating`, {kind:'line', id:l.id});
+    else clearKey(key);
+  }
+  const f = 60 + S.dev;
+  if (f < 59.95) raise('freq', f < 59.9 ? 'crit' : 'warn', `Under-frequency excursion ${f.toFixed(3)} Hz`, null);
+  else if (f > 59.97) clearKey('freq');
+  const res = reserve();
+  if (res < .12) raise('res', res < .06 ? 'crit' : 'warn', `Operating reserve ${fmt(res*100,1)}% below 12% requirement`, null);
+  else clearKey('res');
+  const now = performance.now();
+  S.alarms = S.alarms.filter(a => !(a.cleared && now - a.clearedAt > 12000));
+  renderAlarms();
+}
+function reserve(){
+  const s = S.sol; let av = 0;
+  for (const b of BUSES) if (isGen(b)) av += s.avail[b.id];
+  return (av - s.tl) / s.tl;
+}
+let alarmSig = '';
+function renderAlarms(){
+  const sevRank = {crit:0, warn:1, info:2};
+  const list = S.alarms.slice().sort((a, b) =>
+    (a.cleared - b.cleared) || (a.acked - b.acked) || (sevRank[a.sev] - sevRank[b.sev]) || (b.n - a.n));
+  const shown = S.filter === 'open' ? list.filter(a => !a.acked && !a.cleared) : list;
+  const sig = shown.map(a => [a.n, a.sev, a.acked, a.cleared].join('|')).join(';') + S.filter;
+  const active = S.alarms.filter(a => !a.cleared);
+  const cc = active.filter(a => a.sev === 'crit').length, wc = active.filter(a => a.sev === 'warn').length;
+  const un = active.filter(a => !a.acked).length;
+  $('#alarmCounts').innerHTML =
+    `<span class="chip crit"><span class="dot"></span>${cc} critical</span>` +
+    `<span class="chip warn"><span class="dot"></span>${wc} warning</span>` +
+    `<span class="chip info">${un} unacked</span>`;
+  if (sig === alarmSig){
+    for (const a of shown){ const t = document.querySelector(`#alarmList [data-n="${a.n}"] .t`); if (t && t.textContent !== a.title) t.textContent = a.title; }
+    return;
+  }
+  alarmSig = sig;
+  $('#alarmList').innerHTML = shown.length ? shown.map(a => `
+    <li class="alarm ${a.sev} ${a.acked ? 'acked' : ''} ${a.cleared ? 'cleared' : ''}" data-n="${a.n}" tabindex="0">
+      <span class="stripe"></span>
+      <div><div class="t">${esc(a.title)}</div>
+        <div class="m"><span>${hhmm(a.at)}</span><span>${a.sev.toUpperCase()}</span>${a.ref ? `<span>${a.ref.kind === 'line' ? a.ref.id : 'B' + String(a.ref.id).padStart(2,'0')}</span>` : ''}${a.cleared ? '<span>RTN</span>' : ''}</div></div>
+      ${!a.acked && !a.cleared ? `<button class="ack" data-ack="${a.n}">ACK</button>` : '<span></span>'}
+    </li>`).join('') : `<li class="alarm-empty">No unacknowledged alarms. The system is within limits.</li>`;
+}
+$('#alarmList').addEventListener('click', e => {
+  const ack = e.target.closest('[data-ack]');
+  if (ack){ const a = S.alarms.find(x => x.n === +ack.dataset.ack); if (a) a.acked = true; renderAlarms(); return; }
+  const li = e.target.closest('.alarm'); if (!li) return;
+  const a = S.alarms.find(x => x.n === +li.dataset.n); if (a && a.ref) select(a.ref);
+});
+$('#alarmList').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('alarm')) e.target.click(); });
+$('#ackAll').onclick = () => { S.alarms.forEach(a => a.acked = true); renderAlarms(); toast('All alarms acknowledged'); };
+$('#alarmFilter').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return; S.filter = b.dataset.f;
+  for (const x of $('#alarmFilter').children) x.setAttribute('aria-pressed', x === b);
+  renderAlarms();
+};
+
+/* ================= Switching ================= */
+function setBreaker(id, open){
+  const l = LINE[id]; if (l.open === open) return;
+  if (open){
+    l.open = true;
+    const cut = unreachable(LINES);
+    if (cut.length){
+      l.open = false;
+      event(`Open ${id} blocked: would island ${cut.map(i => BUSES[i].short).join(', ')}`, {kind:'line', id}, 'warn');
+      toast(`Blocked. Opening ${id} would island ${cut.length} bus${cut.length > 1 ? 'es' : ''}.`);
+      recompute(); return;
+    }
+    const lost = Math.abs(S.sol.flows[id]);
+    S.dev -= Math.min(.085, .012 + lost / 9000);
+    event(`Breaker opened on ${id} ${lineName(l)} (${fmt(lost)} MW rerouted)`, {kind:'line', id});
+    toast(`${id} opened. ${fmt(lost)} MW rerouted across the network.`);
+  } else {
+    l.open = false;
+    event(`Breaker closed on ${id} ${lineName(l)}`, {kind:'line', id});
+    toast(`${id} returned to service`);
+  }
+  recompute(); buildChart(); renderInspector();
+}
+function restoreAll(){
+  let n = 0; for (const l of LINES) if (l.open){ l.open = false; n++; }
+  S.over = {};
+  recompute(); buildChart(); renderInspector();
+  toast(n ? `${n} branch${n > 1 ? 'es' : ''} restored, dispatch reset` : 'Dispatch reset to schedule');
+}
+
+/* ================= Recompute + header ================= */
+function recompute(){
+  S.sol = solve(S.h, LINES, S.over);
+  evalAlarms(); updateHeader(); updateInspector(); updateCursor();
+}
+function updateHeader(){
+  const s = S.sol, f = 60 + S.dev;
+  $('#clockT').textContent = hhmm(S.h);
+  $('#sFreq').innerHTML = f.toFixed(3) + '<small>Hz</small>';
+  const mhz = S.dev * 1000, fd = $('#sFreqD');
+  fd.textContent = `Δ ${mhz >= 0 ? '+' : ''}${mhz.toFixed(1)} mHz`;
+  fd.className = 'delta ' + (Math.abs(mhz) > 50 ? 'bad' : Math.abs(mhz) > 20 ? 'warnc' : '');
+  const ace = 4500 * S.dev + 18 * Math.sin(performance.now() / 2300); // ACE = −10B·Δf, B = −45 MW/0.1 Hz
+  $('#sAce').innerHTML = (ace >= 0 ? '+' : '') + fmt(ace) + '<small>MW</small>';
+  $('#sAceD').className = 'delta ' + (Math.abs(ace) > 92 ? 'bad' : '');
+  $('#sLoad').innerHTML = fmt(s.tl) + '<small>MW</small>';
+  let fc = 0; for (const b of BUSES) if (b.peak) fc += b.flat ? b.peak * .92 : b.peak * loadF(S.h);
+  const err = (s.tl - fc) / fc * 100;
+  $('#sLoadD').textContent = `fcst ${fmt(fc)} · ${err >= 0 ? '+' : ''}${err.toFixed(1)}%`;
+  const res = reserve();
+  $('#sRes').innerHTML = fmt(res * 100, 1) + '<small>%</small>';
+  $('#sResD').className = 'delta ' + (res < .12 ? 'bad' : 'good');
+  let tg = 0, ren = 0; for (const b of BUSES) if (isGen(b)){ tg += s.gen[b.id]; if (['hydro','wind','solar'].includes(b.type)) ren += s.gen[b.id]; }
+  $('#sRen').innerHTML = fmt(ren / tg * 100, 1) + '<small>%</small>';
+  $('#sRenD').textContent = `${fmt(ren)} of ${fmt(tg)} MW`;
+}
+function drawFreqSpark(){
+  const cv = $('#freqSpark'), dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w * dpr){ cv.width = w * dpr; cv.height = h * dpr; }
+  const g = cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
+  const H = S.freqHist, lo = -.1, hi = .05, y = v => h - 2 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo) * (h - 4);
+  g.strokeStyle = C.rule; g.setLineDash([2,3]); g.beginPath(); g.moveTo(0, y(0)); g.lineTo(w, y(0)); g.stroke(); g.setLineDash([]);
+  if (H.length < 2) return;
+  g.beginPath(); H.forEach((v, i) => { const x = i / (150 - 1) * w; i ? g.lineTo(x, y(v)) : g.moveTo(x, y(v)); });
+  const last = H[H.length - 1];
+  g.strokeStyle = last < -.05 ? C.crit : last < -.02 ? C.warn : C.accent; g.lineWidth = 1.5; g.stroke();
+  const lx = (H.length - 1) / 149 * w; g.fillStyle = g.strokeStyle; g.beginPath(); g.arc(lx, y(last), 2.2, 0, 7); g.fill();
+}
+
+/* ================= Map canvas ================= */
+const cv = $('#map'), ctx = cv.getContext('2d'), mapPane = $('#mapPane');
+let W = 0, H = 0;
+function sizeMap(){
+  const r = mapPane.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  W = r.width; H = r.height; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+function pos(b){
+  const padX = Math.max(40, W * .07), padT = Math.min(96, H * .2), padB = Math.min(70, H * .15);
+  return [padX + b.x * (W - 2 * padX), padT + b.y * (H - padT - padB)];
+}
+const REGION = [[.03,.12],[.22,.02],[.5,.0],[.78,.08],[.99,.2],[1.0,.55],[.99,.97],[.62,.99],[.3,.99],[.04,.96],[0,.6]];
+function roundRect(x, y, w, h, r){ ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+function draw(dt){
+  const s = S.sol; if (!s || !W) return;
+  ctx.clearRect(0, 0, W, H);
+  // dot grid
+  ctx.fillStyle = C.grid;
+  for (let x = 14; x < W; x += 24) for (let y = 14; y < H; y += 24) ctx.fillRect(x, y, 1.5, 1.5);
+  // balancing area boundary
+  ctx.save(); ctx.setLineDash([2, 5]); ctx.strokeStyle = C['rule-2']; ctx.lineWidth = 1;
+  ctx.beginPath(); REGION.forEach((p, i) => { const [x, y] = pos({x:p[0]*1.06-.03, y:p[1]*1.1-.05}); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.closePath(); ctx.stroke(); ctx.restore();
+
+  const t = performance.now();
+  // lines
+  for (const l of LINES){
+    const [x1, y1] = pos(BUSES[l.a]), [x2, y2] = pos(BUSES[l.b]);
+    const u = loading(s, l), w = l.kV === 345 ? 3 : 2;
+    const sel = S.sel.kind === 'line' && S.sel.id === l.id, hov = S.hover && S.hover.kind === 'line' && S.hover.id === l.id;
+    if (sel || hov){ ctx.strokeStyle = C.accent; ctx.globalAlpha = sel ? .28 : .15; ctx.lineWidth = w + 10; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1; }
+    ctx.lineCap = 'butt';
+    if (l.open){
+      ctx.setLineDash([4, 5]); ctx.strokeStyle = C['fg-3']; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      ctx.fillStyle = C.panel; ctx.strokeStyle = C.crit; ctx.lineWidth = 1.5;
+      ctx.fillRect(mx - 6, my - 6, 12, 12); ctx.strokeRect(mx - 6, my - 6, 12, 12);
+      ctx.beginPath(); ctx.moveTo(mx - 3, my - 3); ctx.lineTo(mx + 3, my + 3); ctx.moveTo(mx + 3, my - 3); ctx.lineTo(mx - 3, my + 3); ctx.stroke();
+      continue;
+    }
+    ctx.strokeStyle = C.wire; ctx.lineWidth = w;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    if (S.layers.heat && u > .6){
+      const col = u >= 1 ? C.crit : C.warn;
+      ctx.strokeStyle = col; ctx.globalAlpha = Math.min(1, (u - .6) / .3); ctx.lineWidth = w + (u >= 1 ? 1 : 0);
+      if (u >= 1) ctx.globalAlpha = .65 + .35 * Math.sin(t / 160);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    // flow particles
+    const f = s.flows[l.id], len = Math.hypot(x2 - x1, y2 - y1), dir = f >= 0 ? 1 : -1;
+    if (S.layers.particles && Math.abs(f) > 2){
+      if (!RM.matches) l.phase = (l.phase + dt * (.25 + 1.6 * Math.min(1.3, u))) % 1;
+      const n = Math.max(2, Math.round(len / 34));
+      ctx.fillStyle = uColor(u) && S.layers.heat ? uColor(u) : C.accent;
+      for (let k = 0; k < n; k++){
+        let p = (k + l.phase) / n; if (dir < 0) p = 1 - p;
+        const px = x1 + (x2 - x1) * p, py = y1 + (y2 - y1) * p;
+        ctx.globalAlpha = .35 + .65 * Math.sin(Math.PI * ((k + l.phase) / n));
+        ctx.beginPath(); ctx.arc(px, py, l.kV === 345 ? 2.2 : 1.7, 0, 7); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (S.layers.labels && (u >= .6 || sel)){
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, txt = fmt(u * 100) + '%';
+      ctx.font = '600 10px "JetBrains Mono", monospace';
+      const tw = ctx.measureText(txt).width + 10;
+      roundRect(mx - tw / 2, my - 8, tw, 16, 4); ctx.fillStyle = C.panel; ctx.fill();
+      ctx.strokeStyle = uColor(u) || C['rule-2']; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = uColor(u) || C['fg-2']; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, mx, my + .5);
+    }
+  }
+  // buses
+  for (const b of BUSES){
+    const [x, y] = pos(b);
+    const sel = S.sel.kind === 'bus' && S.sel.id === b.id, hov = S.hover && S.hover.kind === 'bus' && S.hover.id === b.id;
+    if (sel){
+      const pr = RM.matches ? 0 : (t / 1400) % 1;
+      ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5; ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(x, y, 21, 0, 7); ctx.stroke();
+      if (pr){ ctx.globalAlpha = 1 - pr; ctx.beginPath(); ctx.arc(x, y, 21 + pr * 16, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
+    } else if (hov){ ctx.strokeStyle = C.accent; ctx.globalAlpha = .5; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 20, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
+    if (isGen(b)){
+      const col = C[FUELVAR[b.type]], frac = s.gen[b.id] / b.cap;
+      ctx.fillStyle = C.panel; ctx.strokeStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = C.rule; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, 15.5, 0, 7); ctx.stroke();
+      ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(x, y, 15.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, frac)); ctx.stroke();
+      ctx.fillStyle = col; ctx.font = '700 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText({gas:'G', hydro:'H', wind:'W', solar:'S', nuclear:'N'}[b.type], x, y + .5);
+    } else if (b.type === 'load'){
+      const r = 5 + 5 * Math.sqrt(b.peak / 1250);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = C['fg-2']; ctx.fillRect(-r / 1.4, -r / 1.4, r * 1.41, r * 1.41);
+      ctx.strokeStyle = C.panel; ctx.lineWidth = 2; ctx.strokeRect(-r / 1.4, -r / 1.4, r * 1.41, r * 1.41); ctx.restore();
+    } else {
+      ctx.fillStyle = C.panel; ctx.strokeStyle = C['fg-2']; ctx.lineWidth = 1.5; ctx.fillRect(x - 5.5, y - 5.5, 11, 11); ctx.strokeRect(x - 5.5, y - 5.5, 11, 11);
+    }
+    if (S.layers.labels || sel || hov){
+      const left = b.x > .82, dx = left ? -22 : 22;
+      ctx.textAlign = left ? 'right' : 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.font = '600 11.5px Archivo, "Helvetica Neue", Arial, sans-serif'; ctx.fillStyle = sel ? C.accent : C.fg;
+      ctx.fillText(b.short, x + dx, y - 1);
+      ctx.font = '400 10px "JetBrains Mono", monospace'; ctx.fillStyle = C['fg-3'];
+      const val = isGen(b) ? fmt(s.gen[b.id]) + ' MW' : fmt(s.load[b.id]) + ' MW';
+      ctx.fillText(val, x + dx, y + 11);
+    }
+  }
+}
+function hitTest(mx, my){
+  for (const b of BUSES){ const [x, y] = pos(b); if (Math.hypot(mx - x, my - y) < 17) return {kind:'bus', id:b.id}; }
+  let best = null, bd = 8;
+  for (const l of LINES){
+    const [x1, y1] = pos(BUSES[l.a]), [x2, y2] = pos(BUSES[l.b]);
+    const dx = x2 - x1, dy = y2 - y1, t = Math.max(0, Math.min(1, ((mx - x1) * dx + (my - y1) * dy) / (dx * dx + dy * dy)));
+    const d = Math.hypot(mx - (x1 + t * dx), my - (y1 + t * dy));
+    if (d < bd){ bd = d; best = {kind:'line', id:l.id}; }
+  }
+  return best;
+}
+const tip = $('#tip');
+cv.addEventListener('pointermove', e => {
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  S.hover = hitTest(mx, my);
+  cv.style.cursor = S.hover ? 'pointer' : 'crosshair';
+  if (!S.hover || e.pointerType === 'touch'){ tip.hidden = true; return; }
+  const s = S.sol; let html = '';
+  if (S.hover.kind === 'bus'){
+    const b = BUSES[S.hover.id];
+    html = `<b>${esc(b.name)}</b>` + (isGen(b)
+      ? `<div class="r"><span>Output</span><span>${fmt(s.gen[b.id])} MW</span></div><div class="r"><span>Capacity</span><span>${fmt(b.cap)} MW</span></div>`
+      : `<div class="r"><span>Demand</span><span>${fmt(s.load[b.id])} MW</span></div>`) +
+      `<div class="r"><span>Angle θ</span><span>${(s.theta[b.id] * 57.2958).toFixed(2)}°</span></div>`;
+  } else {
+    const l = LINE[S.hover.id], u = loading(s, l);
+    html = `<b>${l.id} · ${esc(lineName(l))}</b><div class="r"><span>Flow</span><span>${fmt(Math.abs(s.flows[l.id]))} MW</span></div>` +
+      `<div class="r"><span>Loading</span><span>${l.open ? 'OPEN' : fmt(u * 100) + '%'}</span></div><div class="r"><span>Rating</span><span>${fmt(l.rating)} MW · ${l.kV} kV</span></div>`;
+  }
+  tip.innerHTML = html; tip.hidden = false;
+  const tx = Math.min(mx, W - 200), ty = Math.min(my, H - 110);
+  tip.style.left = tx + 'px'; tip.style.top = ty + 'px';
+});
+cv.addEventListener('pointerleave', () => { S.hover = null; tip.hidden = true; });
+cv.addEventListener('click', e => {
+  const r = cv.getBoundingClientRect(), hit = hitTest(e.clientX - r.left, e.clientY - r.top);
+  if (hit){ select(hit); $('#hint').hidden = true; }
+});
+
+/* ================= Chart ================= */
+const svg = $('#chart'), NS = 'http://www.w3.org/2000/svg';
+let CH = null;
+function el(tag, attrs, parent){ const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function buildChart(){
+  const body = $('#chartBody'), w = body.clientWidth, h = body.clientHeight;
+  if (!w || !h) return;
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`); svg.innerHTML = '';
+  const m = {l:44, r:14, t:14, b:24}, iw = w - m.l - m.r, ih = h - m.t - m.b, ymax = 5000;
+  const X = hr => m.l + hr / 24 * iw, Y = v => m.t + ih - v / ymax * ih;
+  CH = {X, m, iw, ih, h, w};
+  for (let v = 0; v <= ymax; v += 1000){
+    el('line', {x1:m.l, x2:w - m.r, y1:Y(v), y2:Y(v), stroke:C.grid, 'stroke-width':1}, svg);
+    const t = el('text', {x:m.l - 8, y:Y(v) + 3, 'text-anchor':'end'}, svg); t.textContent = v ? (v / 1000) + ' GW' : '0';
+  }
+  for (let hr = 0; hr <= 24; hr += 3){
+    const t = el('text', {x:X(hr), y:h - 7, 'text-anchor': hr === 0 ? 'start' : hr === 24 ? 'end' : 'middle'}, svg);
+    t.textContent = String(hr % 24).padStart(2, '0') + ':00';
+  }
+  // stacked areas by fuel, sampled every 15 min
+  const order = ['nuclear','hydro','wind','solar','gas'], N = 96, samples = [];
+  for (let i = 0; i <= N; i++){
+    const hr = i / N * 24, sol = injections(hr, S.over), row = {hr, load: sol.tl};
+    let fc = 0; for (const b of BUSES) if (b.peak) fc += b.flat ? b.peak * .92 : b.peak * loadF(hr);
+    row.fc = fc;
+    for (const f of order) row[f] = BUSES.filter(b => b.type === f).reduce((a, b) => a + sol.gen[b.id], 0);
+    samples.push(row);
+  }
+  const base = samples.map(() => 0);
+  for (const f of order){
+    const top = samples.map((r, i) => base[i] + r[f]);
+    let d = samples.map((r, i) => (i ? 'L' : 'M') + X(r.hr).toFixed(1) + ' ' + Y(top[i]).toFixed(1)).join(' ');
+    for (let i = N; i >= 0; i--) d += ' L' + X(samples[i].hr).toFixed(1) + ' ' + Y(base[i]).toFixed(1);
+    el('path', {d: d + ' Z', fill:C[FUELVAR[f]], 'fill-opacity':.78}, svg);
+    top.forEach((v, i) => base[i] = v);
+  }
+  // forecast band + dashed forecast line
+  let band = samples.map((r, i) => (i ? 'L' : 'M') + X(r.hr).toFixed(1) + ' ' + Y(r.fc * 1.03).toFixed(1)).join(' ');
+  for (let i = N; i >= 0; i--) band += ' L' + X(samples[i].hr).toFixed(1) + ' ' + Y(samples[i].fc * .97).toFixed(1);
+  el('path', {d: band + ' Z', fill:C.fg, 'fill-opacity':.07}, svg);
+  el('path', {d: samples.map((r, i) => (i ? 'L' : 'M') + X(r.hr).toFixed(1) + ' ' + Y(r.fc).toFixed(1)).join(' '), fill:'none', stroke:C['fg-2'], 'stroke-width':1.5, 'stroke-dasharray':'4 4'}, svg);
+  CH.actual = el('path', {fill:'none', stroke:C.fg, 'stroke-width':2, 'stroke-linejoin':'round'}, svg);
+  CH.samples = samples;
+  // peak annotation
+  const pk = samples.reduce((a, b) => b.fc > a.fc ? b : a);
+  el('circle', {cx:X(pk.hr), cy:Y(pk.fc), r:3, fill:C.panel, stroke:C.fg, 'stroke-width':1.5}, svg);
+  const pt = el('text', {x:X(pk.hr), y:Y(pk.fc) - 9, 'text-anchor':'middle', style:`fill:${C.fg};font-weight:600`}, svg);
+  pt.textContent = `Peak ${(pk.fc / 1000).toFixed(2)} GW · ${hhmm(pk.hr)}`;
+  // cursor
+  CH.cur = el('g', {}, svg);
+  CH.curLine = el('line', {y1:m.t - 4, y2:m.t + ih, stroke:C.accent, 'stroke-width':1.5}, CH.cur);
+  CH.curDot = el('circle', {r:4, fill:C.accent, stroke:C.panel, 'stroke-width':2}, CH.cur);
+  CH.curBg = el('rect', {height:17, rx:4, fill:C.accent}, CH.cur);
+  CH.curTxt = el('text', {'text-anchor':'middle', style:`fill:${getComputedStyle(document.documentElement).getPropertyValue('--accent-ink')};font-weight:600`}, CH.cur);
+  updateCursor();
+}
+function updateCursor(){
+  if (!CH || !CH.samples) return;
+  const {X, m, ih, samples} = CH, hr = wrapH(S.h), x = X(hr);
+  const ymax = 5000, Y = v => m.t + ih - v / ymax * ih;
+  const pts = samples.filter(r => r.hr <= hr);
+  CH.actual.setAttribute('d', pts.map((r, i) => (i ? 'L' : 'M') + X(r.hr).toFixed(1) + ' ' + Y(r.load).toFixed(1)).join(' ') + ` L${x.toFixed(1)} ${Y(S.sol.tl).toFixed(1)}`);
+  CH.curLine.setAttribute('x1', x); CH.curLine.setAttribute('x2', x);
+  CH.curDot.setAttribute('cx', x); CH.curDot.setAttribute('cy', Y(S.sol.tl));
+  const lx = Math.max(m.l + 24, Math.min(CH.w - m.r - 24, x));
+  CH.curBg.setAttribute('x', lx - 22); CH.curBg.setAttribute('y', 0); CH.curBg.setAttribute('width', 44);
+  CH.curTxt.setAttribute('x', lx); CH.curTxt.setAttribute('y', 12); CH.curTxt.textContent = hhmm(hr);
+}
+let scrubbing = false;
+function scrubTo(e){
+  if (!CH) return; const r = svg.getBoundingClientRect();
+  const hr = (e.clientX - r.left - CH.m.l) / CH.iw * 24;
+  S.h = Math.max(0, Math.min(23.99, hr)); recompute();
+}
+svg.addEventListener('pointerdown', e => { scrubbing = true; svg.setPointerCapture(e.pointerId); scrubTo(e); });
+svg.addEventListener('pointermove', e => { if (scrubbing) scrubTo(e); });
+svg.addEventListener('pointerup', () => { scrubbing = false; renderInspector(); });
+
+/* ================= Inspector ================= */
+function select(ref){ S.sel = ref; renderInspector(); }
+function sparkPath(vals, w, h, max, pad = 4){
+  return vals.map((v, i) => (i ? 'L' : 'M') + (i / (vals.length - 1) * w).toFixed(1) + ' ' + (h - pad - v / max * (h - 2 * pad)).toFixed(1)).join(' ');
+}
+function sparkSVG(vals, max, color, refLine, refLabel){
+  const w = 300, h = 74, hr = wrapH(S.h), cx = hr / 24 * w;
+  const p = sparkPath(vals, w, h, max);
+  const refY = refLine != null ? (h - 4 - refLine / max * (h - 8)) : null;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    ${refY != null ? `<line x1="0" x2="${w}" y1="${refY}" y2="${refY}" stroke="${C.crit}" stroke-dasharray="3 3" stroke-width="1" vector-effect="non-scaling-stroke"/>` : ''}
+    <path d="${p} L${w} ${h} L0 ${h} Z" fill="${color}" fill-opacity=".14"/>
+    <path d="${p}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+    <line x1="${cx}" x2="${cx}" y1="0" y2="${h}" stroke="${C.accent}" stroke-width="1" vector-effect="non-scaling-stroke"/>
+  </svg><div style="display:flex;justify-content:space-between" class="mono"><span class="delta">00:00</span><span class="delta">${refLabel || ''}</span><span class="delta">24:00</span></div>`;
+}
+function renderInspector(){
+  const s = S.sol, box = $('#inspIn'); if (!s) return;
+  if (S.sel.kind === 'bus'){
+    const b = BUSES[S.sel.id], gen = isGen(b);
+    const conns = LINES.filter(l => l.a === b.id || l.b === b.id);
+    const kind = gen ? `Generator · ${FUEL[b.type]}` : b.type === 'sub' ? 'Switching substation' : 'Load bus';
+    const prof = []; for (let i = 0; i <= 48; i++){ const inj = injections(i / 2, S.over); prof.push(gen ? inj.gen[b.id] : inj.load[b.id]); }
+    const pmax = Math.max(...prof, 1) * 1.1;
+    const lim = S.over[b.id] ?? 100;
+    box.innerHTML = `
+      <div>
+        <div class="eyebrow">${kind}</div>
+        <h2>${esc(b.name)}</h2>
+        <div class="chips"><span class="chip info">B${String(b.id).padStart(2,'0')}</span><span class="chip info">${b.kV} kV</span>
+          ${b.id === 0 ? '<span class="chip accent">Slack / AGC</span>' : ''}${b.flat ? '<span class="chip info">Flat 24/7 profile</span>' : ''}</div>
+      </div>
+      <div class="tiles">
+        <div class="tile"><div class="eyebrow">Net injection</div><div class="v" data-k="net"></div></div>
+        <div class="tile"><div class="eyebrow">Voltage angle</div><div class="v" data-k="ang"></div></div>
+      </div>
+      <dl class="kv">
+        ${gen ? `<dt>Output</dt><dd data-k="gen"></dd><dt>Nameplate</dt><dd>${fmt(b.cap)} MW</dd><dt>Available now</dt><dd data-k="avail"></dd><dt>Capacity factor</dt><dd data-k="cf"></dd>`
+              : `<dt>Demand</dt><dd data-k="load"></dd><dt>Forecast peak</dt><dd>${fmt(b.peak)} MW</dd>`}
+        <dt>Branches</dt><dd>${conns.length} (${conns.filter(l => l.open).length} open)</dd>
+      </dl>
+      ${gen && b.id !== 0 ? `
+      <div class="sect">
+        <div class="sect-h"><span class="eyebrow">Output limit</span><span class="mono" id="limVal">${lim}%</span></div>
+        <div class="range-row"><input type="range" id="limRange" min="0" max="100" step="5" value="${lim}" aria-label="Output limit for ${esc(b.name)}"><button class="btn" id="limReset">Reset</button></div>
+        <div class="delta">Brandt (slack) picks up any shortfall. Watch the lines out of Brandt heat up.</div>
+      </div>` : ''}
+      ${b.id === 0 ? `<div class="note">Brandt is the slack bus. Automatic generation control moves its output to balance every megawatt the rest of the system can't cover.</div>` : ''}
+      <div class="sect">
+        <div class="sect-h"><span class="eyebrow">Connected branches</span><span class="delta">flow · loading</span></div>
+        <ul class="conn">${conns.map(l => { const other = BUSES[l.a === b.id ? l.b : l.a];
+          return `<li><button data-line="${l.id}"><span class="id">${l.id}</span><span class="nm">${esc(other.name)}</span><span class="fl" data-k="cf-${l.id}"></span><span class="meter"><span data-k="cm-${l.id}"></span></span></button></li>`; }).join('')}</ul>
+      </div>
+      <div class="sect">
+        <div class="sect-h"><span class="eyebrow">${gen ? 'Scheduled output' : 'Demand profile'} · 24 h</span><span class="delta">peak ${fmt(Math.max(...prof))} MW</span></div>
+        ${sparkSVG(prof, pmax, gen ? C[FUELVAR[b.type]] : C['fg-2'])}
+      </div>`;
+    box.querySelectorAll('[data-line]').forEach(x => x.onclick = () => select({kind:'line', id:x.dataset.line}));
+    const rg = $('#limRange');
+    if (rg){
+      rg.oninput = () => {
+        const prev = S.sol.gen[b.id];
+        S.over[b.id] = +rg.value; $('#limVal').textContent = rg.value + '%';
+        recompute();
+        const d = prev - S.sol.gen[b.id]; if (d > 0) S.dev -= Math.min(.06, d / 12000);
+      };
+      rg.onchange = () => { buildChart(); event(`${b.short} output limit set to ${rg.value}%`, {kind:'bus', id:b.id}); };
+      $('#limReset').onclick = () => { delete S.over[b.id]; recompute(); buildChart(); renderInspector(); };
+    }
+  } else {
+    const l = LINE[S.sel.id], A = BUSES[l.a], B = BUSES[l.b];
+    const prof = []; for (let i = 0; i <= 48; i++){ prof.push(loading(solve(i / 2, LINES, S.over), l) * 100); }
+    const pmax = Math.max(115, ...prof);
+    box.innerHTML = `
+      <div>
+        <div class="eyebrow">Transmission line · ${l.kV} kV</div>
+        <h2>${esc(A.short)} – ${esc(B.short)}</h2>
+        <div class="chips"><span class="chip info">${l.id}</span><span class="chip" data-k="status"></span></div>
+      </div>
+      <div class="tiles">
+        <div class="tile"><div class="eyebrow">Flow</div><div class="v" data-k="flow"></div></div>
+        <div class="tile"><div class="eyebrow">Loading</div><div class="v" data-k="load"></div></div>
+      </div>
+      <div class="sect">
+        <div class="sect-h"><span class="eyebrow">Thermal loading</span><span class="delta">90% alarm · 100% emergency</span></div>
+        <div class="meter" style="height:10px"><span data-k="meter"></span><i class="mark" style="left:${90/1.3}%"></i><i class="mark" style="left:${100/1.3}%;background:var(--crit)"></i></div>
+      </div>
+      <dl class="kv">
+        <dt>From</dt><dd>${esc(A.name)}</dd><dt>To</dt><dd>${esc(B.name)}</dd>
+        <dt>Direction</dt><dd data-k="dir"></dd>
+        <dt>Rating (normal)</dt><dd>${fmt(l.rating)} MW</dd><dt>Reactance</dt><dd>${l.x.toFixed(3)} pu</dd>
+        <dt>Angle spread</dt><dd data-k="spread"></dd>
+      </dl>
+      <div class="actions">
+        ${l.open ? `<button class="btn primary" id="brk">Close breaker</button>` : `<button class="btn danger" id="brk">Open breaker</button>`}
+        <button class="btn" id="goA">${esc(A.short)}</button><button class="btn" id="goB">${esc(B.short)}</button>
+      </div>
+      <div class="sect">
+        <div class="sect-h"><span class="eyebrow">Loading · 24 h at current topology</span><span class="delta">max ${fmt(Math.max(...prof))}%</span></div>
+        ${sparkSVG(prof, pmax, C.accent, 100, '100% rating')}
+      </div>`;
+    $('#brk').onclick = () => setBreaker(l.id, !l.open);
+    $('#goA').onclick = () => select({kind:'bus', id:A.id});
+    $('#goB').onclick = () => select({kind:'bus', id:B.id});
+  }
+  updateInspector();
+}
+function setK(k, html){ const e = document.querySelector(`#inspIn [data-k="${k}"]`); if (e) e.innerHTML = html; return e; }
+function meter(e, u){ if (!e) return; e.style.width = Math.min(100, u * 100 / 1.3) + '%'; e.style.background = u >= 1 ? 'var(--crit)' : u >= .9 ? 'var(--warn)' : 'var(--accent)'; }
+function updateInspector(){
+  const s = S.sol; if (!s || !$('#inspIn').firstElementChild) return;
+  if (S.sel.kind === 'bus'){
+    const b = BUSES[S.sel.id], net = s.gen[b.id] - s.load[b.id];
+    setK('net', (net >= 0 ? '+' : '−') + fmt(Math.abs(net)) + '<small>MW</small>');
+    setK('ang', (s.theta[b.id] * 57.2958).toFixed(2) + '<small>deg</small>');
+    setK('gen', fmt(s.gen[b.id]) + ' MW'); setK('load', fmt(s.load[b.id]) + ' MW');
+    setK('avail', fmt(s.avail[b.id]) + ' MW'); setK('cf', b.cap ? fmt(s.gen[b.id] / b.cap * 100, 1) + '%' : '');
+    for (const l of LINES) if (l.a === b.id || l.b === b.id){
+      const f = s.flows[l.id] * (l.a === b.id ? 1 : -1), u = loading(s, l);
+      setK('cf-' + l.id, l.open ? '<span style="color:var(--crit)">OPEN</span>' : `${f >= 0 ? '→' : '←'} ${fmt(Math.abs(f))} · <span style="color:${u >= 1 ? 'var(--crit)' : u >= .9 ? 'var(--warn)' : 'inherit'}">${fmt(u * 100)}%</span>`);
+      meter(document.querySelector(`#inspIn [data-k="cm-${l.id}"]`), l.open ? 0 : u);
+    }
+  } else {
+    const l = LINE[S.sel.id], f = s.flows[l.id], u = loading(s, l);
+    setK('flow', fmt(Math.abs(f)) + '<small>MW</small>');
+    const le = setK('load', l.open ? '—' : fmt(u * 100, 1) + '<small>%</small>');
+    if (le) le.style.color = l.open ? '' : u >= 1 ? 'var(--crit)' : u >= .9 ? 'var(--warn)' : '';
+    const st = setK('status', l.open ? '<span class="dot"></span>Open' : `<span class="dot"></span>${u >= 1 ? 'Overloaded' : u >= .9 ? 'Near limit' : 'In service'}`);
+    if (st) st.className = 'chip ' + (l.open ? 'crit' : sevOf(u));
+    meter(document.querySelector('#inspIn [data-k="meter"]'), l.open ? 0 : u);
+    setK('dir', l.open ? '—' : (f >= 0 ? `${BUSES[l.a].short} → ${BUSES[l.b].short}` : `${BUSES[l.b].short} → ${BUSES[l.a].short}`));
+    setK('spread', ((s.theta[l.a] - s.theta[l.b]) * 57.2958).toFixed(2) + '°');
+  }
+}
+
+/* ================= N-1 scan ================= */
+let n1Timer = null;
+function runN1(){
+  closePalette(); $('#n1Scrim').hidden = false;
+  const cands = LINES.filter(l => !l.open), res = [];
+  $('#n1Sub').textContent = `Opens each of ${cands.length} in-service branches in turn at ${hhmm(S.h)}, re-solves the network, and ranks the worst post-contingency thermal loading.`;
+  $('#n1Wrap').innerHTML = ''; let i = 0; clearInterval(n1Timer);
+  n1Timer = setInterval(() => {
+    const l = cands[i]; l.open = true;
+    const cut = unreachable(LINES);
+    if (cut.length) res.push({l, island: cut});
+    else {
+      const sol = solve(S.h, LINES, S.over); let worst = null, wu = 0;
+      for (const k of LINES) if (!k.open){ const u = loading(sol, k); if (u > wu){ wu = u; worst = k; } }
+      res.push({l, worst, wu});
+    }
+    l.open = false; i++;
+    $('#n1Prog').style.width = (i / cands.length * 100) + '%';
+    renderN1(res, i === cands.length);
+    if (i >= cands.length) clearInterval(n1Timer);
+  }, RM.matches ? 1 : 45);
+}
+function renderN1(res, done){
+  const rows = res.slice().sort((a, b) => (b.island ? 9 : b.wu) - (a.island ? 9 : a.wu));
+  const bad = res.filter(r => !r.island && r.wu >= 1).length;
+  $('#n1Wrap').innerHTML = `<table>
+    <thead><tr><th>Contingency</th><th>Worst element</th><th style="text-align:right">Post-ctg loading</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows.map(r => r.island ? `
+      <tr><td><b class="mono">${r.l.id}</b> ${esc(lineName(r.l))}</td><td colspan="2" style="color:var(--fg-2)">Islands ${r.island.map(i => esc(BUSES[i].short)).join(', ')}</td>
+      <td><span class="chip info">Radial</span></td><td></td></tr>` : `
+      <tr><td><b class="mono">${r.l.id}</b> ${esc(lineName(r.l))}</td>
+      <td><span class="mono">${r.worst.id}</span> ${esc(lineName(r.worst))}</td>
+      <td class="num"><span class="meter"><span style="width:${Math.min(100, r.wu * 100 / 1.6)}%;background:${r.wu >= 1 ? 'var(--crit)' : r.wu >= .9 ? 'var(--warn)' : 'var(--accent)'}"></span></span>${fmt(r.wu * 100)}%</td>
+      <td><span class="chip ${sevOf(r.wu)}">${r.wu >= 1 ? 'Violation' : r.wu >= .9 ? 'Marginal' : 'Secure'}</span></td>
+      <td><button class="btn" data-sim="${r.l.id}" style="height:26px">Simulate</button></td></tr>`).join('')}</tbody></table>
+    ${done ? `<div class="alarm-foot"><span>${bad ? `${bad} contingenc${bad > 1 ? 'ies' : 'y'} cause thermal violations. Consider redispatching Brandt or pre-positioning hydro.` : 'System is N-1 secure at this hour.'}</span><span class="mono">${res.length} cases · ${hhmm(S.h)}</span></div>` : ''}`;
+  $('#n1Wrap').querySelectorAll('[data-sim]').forEach(b => b.onclick = () => {
+    $('#n1Scrim').hidden = true; select({kind:'line', id:b.dataset.sim}); setBreaker(b.dataset.sim, true);
+  });
+}
+$('#n1Btn').onclick = runN1;
+$('#n1Close').onclick = () => { $('#n1Scrim').hidden = true; clearInterval(n1Timer); };
+$('#n1Scrim').addEventListener('click', e => { if (e.target.id === 'n1Scrim'){ $('#n1Scrim').hidden = true; clearInterval(n1Timer); } });
+
+/* ================= Command palette ================= */
+function commands(){
+  const c = [];
+  for (const b of BUSES) c.push({g:'Go to', label:b.name, sub:isGen(b) ? FUEL[b.type] + ' · ' + fmt(b.cap) + ' MW' : b.type === 'sub' ? 'Substation' : 'Load', run:() => select({kind:'bus', id:b.id})});
+  for (const l of LINES) c.push({g:'Switching', label:(l.open ? 'Close breaker ' : 'Open breaker ') + l.id + ' ' + lineName(l), sub:l.kV + ' kV · ' + fmt(l.rating) + ' MW', run:() => { select({kind:'line', id:l.id}); setBreaker(l.id, !l.open); }});
+  c.push({g:'Analysis', label:'Run N-1 contingency scan', sub:'N', run:runN1});
+  c.push({g:'Analysis', label:'Restore all branches and reset dispatch', sub:'', run:restoreAll});
+  c.push({g:'Time', label:'Jump to evening peak', sub:'18:30', run:() => { S.h = 18.5; recompute(); renderInspector(); }});
+  c.push({g:'Time', label:'Jump to solar noon', sub:'12:55', run:() => { S.h = 12.9; recompute(); renderInspector(); }});
+  c.push({g:'Time', label:'Jump to overnight trough', sub:'03:00', run:() => { S.h = 3; recompute(); renderInspector(); }});
+  c.push({g:'Time', label:S.playing ? 'Pause simulation' : 'Resume simulation', sub:'Space', run:togglePlay});
+  for (const k of ['particles','heat','labels']) c.push({g:'View', label:`${S.layers[k] ? 'Hide' : 'Show'} ${ {particles:'flow particles', heat:'loading heat', labels:'labels'}[k] }`, sub:'', run:() => setLayer(k, !S.layers[k])});
+  c.push({g:'View', label:'Toggle light / dark theme', sub:'', run:toggleTheme});
+  c.push({g:'Alarms', label:'Acknowledge all alarms', sub:'', run:() => $('#ackAll').click()});
+  return c;
+}
+function fuzzy(q, s){
+  q = q.toLowerCase(); const t = s.toLowerCase(); if (!q) return {score:0, marks:[]};
+  const ix = t.indexOf(q); if (ix >= 0) return {score:100 - ix, marks:[...Array(q.length)].map((_, i) => ix + i)};
+  let j = 0; const marks = [];
+  for (let i = 0; i < t.length && j < q.length; i++) if (t[i] === q[j]){ marks.push(i); j++; }
+  return j === q.length ? {score:50 - (marks[marks.length - 1] - marks[0]), marks} : null;
+}
+function hl(s, marks){ const m = new Set(marks); return [...s].map((ch, i) => m.has(i) ? `<mark>${esc(ch)}</mark>` : esc(ch)).join(''); }
+let palItems = [], palIdx = 0;
+function renderPalette(){
+  const q = $('#palInput').value.trim();
+  palItems = commands().map(c => ({...c, f: fuzzy(q, c.label + ' ' + c.g)})).filter(c => c.f).sort((a, b) => q ? b.f.score - a.f.score : 0).slice(0, q ? 30 : 60);
+  palIdx = Math.min(palIdx, Math.max(0, palItems.length - 1));
+  let g = null, html = '';
+  palItems.forEach((c, i) => {
+    if (!q && c.g !== g){ g = c.g; html += `<li class="grp" role="presentation">${esc(g)}</li>`; }
+    html += `<li class="it" role="option" data-i="${i}" aria-selected="${i === palIdx}"><span>${hl(c.label, c.f.marks.filter(x => x < c.label.length))}</span>${c.sub ? `<span class="sub">${esc(c.sub)}</span>` : ''}</li>`;
+  });
+  $('#palList').innerHTML = html || `<li class="alarm-empty">No commands match “${esc(q)}”.</li>`;
+  const cur = $('#palList [aria-selected="true"]'); if (cur) cur.scrollIntoView({block:'nearest'});
+}
+function openPalette(){ $('#palScrim').hidden = false; $('#palInput').value = ''; palIdx = 0; renderPalette(); $('#palInput').focus(); }
+function closePalette(){ $('#palScrim').hidden = true; }
+function runPal(i){ const c = palItems[i]; if (!c) return; closePalette(); c.run(); }
+$('#palInput').addEventListener('input', () => { palIdx = 0; renderPalette(); });
+$('#palInput').addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown'){ palIdx = Math.min(palItems.length - 1, palIdx + 1); renderPalette(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp'){ palIdx = Math.max(0, palIdx - 1); renderPalette(); e.preventDefault(); }
+  else if (e.key === 'Enter'){ runPal(palIdx); e.preventDefault(); }
+});
+$('#palList').addEventListener('click', e => { const it = e.target.closest('.it'); if (it) runPal(+it.dataset.i); });
+$('#palScrim').addEventListener('click', e => { if (e.target.id === 'palScrim') closePalette(); });
+$('#cmdBtn').onclick = openPalette;
+
+/* ================= Controls ================= */
+function togglePlay(){
+  S.playing = !S.playing;
+  $('#playIco').innerHTML = S.playing ? '<rect x="2" y="1.5" width="3" height="9" fill="currentColor"/><rect x="7" y="1.5" width="3" height="9" fill="currentColor"/>' : '<path d="M3 1.5 L10.5 6 L3 10.5 Z" fill="currentColor"/>';
+  $('#playBtn').setAttribute('aria-label', S.playing ? 'Pause simulation' : 'Play simulation');
+}
+$('#playBtn').onclick = togglePlay;
+$('#rateSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.rate = +b.dataset.rate;
+  for (const x of $('#rateSeg').children) x.setAttribute('aria-pressed', x === b); if (!S.playing) togglePlay(); };
+function setLayer(k, v){ S.layers[k] = v; const b = document.querySelector(`[data-layer="${k}"]`); if (b) b.setAttribute('aria-pressed', v); }
+$('#layers').addEventListener('click', e => { const b = e.target.closest('[data-layer]'); if (b) setLayer(b.dataset.layer, !S.layers[b.dataset.layer]); });
+function isDark(){ const t = document.documentElement.dataset.theme; return t ? t === 'dark' : !matchMedia('(prefers-color-scheme: light)').matches; }
+function toggleTheme(){ document.documentElement.dataset.theme = isDark() ? 'light' : 'dark'; }
+$('#themeBtn').onclick = toggleTheme;
+function onTheme(){ readColors(); buildChart(); renderInspector(); }
+new MutationObserver(onTheme).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', onTheme);
+addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); $('#palScrim').hidden ? openPalette() : closePalette(); return; }
+  if (e.key === 'Escape'){ closePalette(); $('#n1Scrim').hidden = true; clearInterval(n1Timer); return; }
+  if (e.target.matches('input, textarea, select') || !$('#palScrim').hidden) return;
+  if (e.key === ' ' && !e.target.matches('button')){ e.preventDefault(); togglePlay(); }
+  else if (e.key === '/'){ e.preventDefault(); openPalette(); }
+  else if (e.key === '[' || e.key === ']'){ S.h = wrapH(S.h + (e.key === ']' ? .25 : -.25)); recompute(); renderInspector(); }
+  else if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey){ runN1(); }
+});
+
+/* ================= Loop ================= */
+let last = performance.now(), acc = 0, histAcc = 0, inspAcc = 0;
+function frame(now){
+  const dt = Math.min(.1, (now - last) / 1000); last = now;
+  if (S.playing && !scrubbing){ S.h = wrapH(S.h + S.rate * dt / 60); }
+  S.dev = S.dev * Math.exp(-dt * .35) + (Math.random() - .5) * .004 * Math.sqrt(dt * 60) * .35;
+  acc += dt; histAcc += dt; inspAcc += dt;
+  if (acc > .12){ acc = 0; recompute(); }
+  if (histAcc > .1){ histAcc = 0; S.freqHist.push(S.dev); if (S.freqHist.length > 150) S.freqHist.shift(); drawFreqSpark(); }
+  if (inspAcc > 30 && S.playing){ inspAcc = 0; renderInspector(); } // refresh the 24 h profile cursor
+  draw(dt);
+  requestAnimationFrame(frame);
+}
+
+/* ================= Boot ================= */
+readColors();
+S.sol = solve(S.h, LINES, S.over);
+raise('ev-agc', 'info', 'AGC mode: tie-line bias control, B = −45 MW/0.1 Hz', null);
+raise('ev-maint', 'info', 'Planned outage L12 Mesa Flats – Callow, Thu 02:00–05:00', {kind:'line', id:'L12'});
+S.alarms.forEach(a => { a.acked = true; a.at = 17.5; });
+sizeMap();
+new ResizeObserver(() => { sizeMap(); buildChart(); }).observe(mapPane);
+new ResizeObserver(() => buildChart()).observe($('#chartBody'));
+S.playing = !S.playing; togglePlay();
+buildChart(); recompute(); renderInspector();
+for (let i = 0; i < 150; i++) S.freqHist.push((Math.random() - .5) * .012);
+requestAnimationFrame(t => { last = t; frame(t); });
+if (document.fonts) document.fonts.ready.then(() => buildChart());
+})();
+</script>
